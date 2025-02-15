@@ -1,0 +1,454 @@
+#海龜run
+def run(self):
+                '''
+                尋找交易訊號1時做多,-1時做空,並實時更新equity,最後關閉倉位,
+                並增加出場機制利用:短週期donchian上下界 , 止損價 , 回撤幅度
+                '''
+                
+                for i in range(1 , len(self.data)):
+                    current_price = self.data.loc[i , 'Close']
+                    current_atr = self.data.loc[i , 'atr']
+                    
+                    if self.position == 0:
+                        if self.data.loc[i , 'signal'] == 1 :
+                           self.long(row_index=i)
+                           self.entry_price = current_price
+                        
+                        elif self.data.loc[i , 'signal'] == -1 :
+                           self.short(row_index=i)
+                           self.entry_price = current_price
+                    
+                    elif self.position > 0 : #有多倉
+                        donchianHighExit = self.data.loc[i , 'exit_dn']
+                        
+                        long_stop_loss = self.entry_price - 2 * current_atr
+                        
+                        bar_high_price = self.data.loc[i , 'High']
+                        
+                        self.highest_price = max(self.highest_price , bar_high_price)
+                        
+                        draw_back_price = self.highest_price - 4 * current_atr
+                        sell_price = max(donchianHighExit , long_stop_loss , draw_back_price)
+                        
+                        self.data.loc[i , 'position'] = self.position
+                        if current_price < sell_price :
+                            self.sell(row_index = i , price = current_price)
+                            self.entry_price = None  #平倉後重設entry_price
+                        else:
+                            self.data.loc[i , 'position'] = self.position
+                                
+                    if self.position < 0 : #有空倉
+                        donchianlowExit = self.data.loc[i , 'exit_up']
+                        
+                        short_stop_loss = self.entry_price + 2 * current_atr
+                        
+                        bar_lowest_price = self.data.loc[i , 'Low']
+                        
+                        self.lowest_price = min(self.lowest_price , bar_lowest_price)
+                        
+                        draw_back_price = self.lowest_price + 4 * current_atr
+                        cover_price = min(donchianlowExit , short_stop_loss , draw_back_price)
+                       
+                        if current_price > cover_price :
+                            self.cover(row_index = i , price = current_price)
+                            self.entry_price = None   #平倉後重設entry_price
+                        else:
+                            self.data.loc[i , 'position'] = self.position
+                
+                    self.data.loc[i , 'position'] = self.position
+                    self.data.loc[i , 'equity'] = self.get_total_equity(price = current_price)
+                 
+                self.close_position()
+                
+                self.max_drawdown = self.calculate_max_drawdown()
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+#ema
+def run(self):
+            '''
+            尋找交易訊號1時做多,-1時做空,1並實時更新equity,最後關閉倉位,
+            並增加止損機制
+            '''
+            for i in range(1 , len(self.data)):
+                current_price = self.data.loc[i, 'Close']
+                current_atr = self.data.loc[i, 'atr']
+                
+
+                if self.data.loc[i, 'signal'] == 1 :
+                    if self.position < 0 :
+                        self.cover(row_index = i, price = current_price)
+                        self.entry_price = None
+                        
+                    self.long(row_index = i, price = current_price)
+                    self.entry_price = current_price
+                   
+                
+                elif self.data.loc[i, 'signal'] == -1 :
+                    if self.position > 0 :
+                        self.sell(row_index = i, price = current_price)
+                        self.entry_price = None
+                    
+                    self.short(row_index = i, price = current_price)
+                    self.entry_price = current_price
+                    
+                
+                if self.position > 0 :
+                    if current_price < self.entry_price - 2 * current_atr :  #止損
+                        self.sell(row_index = i, price = current_price)
+                        self.entry_price = None
+                    elif current_price > self.entry_price + 2 * current_atr :  #止盈
+                        self.sell(row_index = i, price = current_price)
+                        self.entry_price = None
+        
+                elif self.position < 0 :
+                    if current_price > self.entry_price + 2 * current_atr:  #止損
+                        self.cover(row_index = i, price = current_price)
+                        self.entry_price = None
+                    elif current_price < self.entry_price - 2 * current_atr : #止盈
+                        self.cover(row_index = i, price = current_price)
+                        self.entry_price = None
+                
+                self.data.loc[i, 'position'] = self.position
+                self.data.loc[i, 'equity'] = self.get_total_equity(price = current_price)
+             
+            self.close_position() 
+                
+            self.max_drawdown = self.calculate_max_drawdown()
+                
+            return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]          
+
+#布林帶肯特納通道
+        def run(self):
+                '''
+                尋找交易訊號1時做多,-1時做空,並實時更新equity,最後關閉倉位,
+                並加入KDJ和停損機制
+                '''
+                
+                for i in range(1 , len(self.data)):
+                    current_price = self.data.loc[i , 'Close']
+                    current_j = self.data.loc[i , 'J']
+                    prev_j = self.data.loc[i-1 , 'J']
+                    
+                    if self.position == 0:
+                        if self.data.loc[i , 'signal'] == 1 :
+                           self.long(row_index=i)
+                           self.entry_price = current_price
+                           self.stop_loss = self.data.loc[i-1, 'Low']
+                        
+                        elif self.data.loc[i , 'signal'] == -1 :
+                           self.short(row_index=i)
+                           self.entry_price = current_price
+                           self.stop_loss = self.data.loc[i-1, 'High']
+                    
+                    elif self.position > 0 : #有多倉
+                        if current_price < self.stop_loss : #設置停損基於過去五根k棒最低點
+                            self.sell(row_index = i, price = current_price)
+                            self.entry_price = None
+                            self.stop_loss = None
+                        
+                        if current_j < 80 and prev_j > 80: #停利當kdj信號出現大於80以上做停利準備,從80下跌後馬上停利
+                            self.sell(row_index = i ,price = current_price) 
+                            self.entry_price = None
+                        
+                 
+                    elif self.position < 0 : #有空倉
+                        if current_price > self.stop_loss : #設置停損基於過去五根k棒最高點
+                            self.cover(row_index = i, price = current_price)
+                            self.entry_price = None
+                            self.stop_loss = None
+                        
+                        if current_j > 20 and prev_j < 20 :  #停利當kdj信號出現小於20以下做停利準備,從20上漲後馬上停利
+                            self.cover(row_index = i, price = current_price)
+                            self.entry_price = None
+                    
+                
+                    self.data.loc[i , 'position'] = self.position
+                    self.data.loc[i , 'equity'] = self.get_total_equity(price = current_price)
+                 
+                self.close_position()
+                
+                self.max_drawdown = self.calculate_max_drawdown()
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+
+#布林帶
+1.      def run(self):
+                '''
+                bollinger_band的進出場條件判斷,產生出信號後下一根k棒的open進場
+                '''
+               
+                for i in tqdm(range(1, len(self.data))) :
+                    
+                    bb_upper = self.data.loc[i-1, 'B_BB_Upper']
+                    bb_middle = self.data.loc[i-1, 'S_BB_Middle']
+                    bb_lower = self.data.loc[i-1, 'B_BB_Lower']
+                    
+                    current_price = self.data.loc[i, 'Close']     
+                    atr = self.data.loc[i, 'atr']
+                    
+                    if self.position == 0 :
+                        if self.data.loc[i, 'signal'] == 1 :
+                            next_open = self.data.loc[i+1, 'Open']
+                            self.long(row_index = i, price = next_open)
+                        
+                        elif self.data.loc[i, 'signal'] == -1 :
+                            next_open = self.data.loc[i+1, 'Open']
+                            self.short(row_index = i, price = next_open)
+                    
+                    elif self.position > 0 :
+                        if self.data.loc[i, 'High'] > bb_upper: #停利
+                            self.sell(row_index = i, price = bb_upper)
+                        
+                        elif self.data.loc[i, 'Low'] < bb_middle : #停損
+                            self.sell(row_index = i, price = bb_middle)
+                    
+                    elif self.position < 0 :
+                        if self.data.loc[i, 'Low'] < bb_lower : #停利
+                            self.cover(row_index = i, price = bb_lower) 
+                        
+                        elif self.data.loc[i, 'High'] > bb_middle: #停損
+                            self.cover(row_index = i, price = bb_middle)
+                    
+                    self.data.loc[i , 'position'] = self.position
+                    self.data.loc[i , 'equity'] = self.get_total_equity(price = current_price)
+                
+                self.close_position()
+                self.max_drawdown = self.calculate_max_drawdown()
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+
+
+2.               def run(self):
+                '''
+                bollinger_band的進出場條件判斷,產生出信號後下一根k棒的open進場
+                '''
+               
+                for i in tqdm(range(1, len(self.data))) :
+                    
+                    current_price = self.data.loc[i, 'Close']     
+                    atr = self.data.loc[i, 'atr']
+                    bb_upper = self.data.loc[i-1, 'B_BB_Upper']
+                    bb_middle = self.data.loc[i-1, 'S_BB_Middle']
+                    bb_lower = self.data.loc[i-1, 'B_BB_Lower']
+                    
+                    if self.position == 0 :
+                        if self.data.loc[i, 'signal'] == 1 :
+                            next_open = self.data.loc[i+1, 'Open']
+                            self.long(row_index = i, price = next_open)
+                            stop_profit_atr = next_open + 3 * atr
+                            stop_loss_atr = next_open - 1.5 * atr
+                        
+                        elif self.data.loc[i, 'signal'] == -1 :
+                            next_open = self.data.loc[i+1, 'Open']
+                            self.short(row_index = i, price = next_open)
+                            stop_profit_atr = next_open - 3 * atr
+                            stop_loss_atr = next_open + 1.5 * atr
+                    
+                    elif self.position > 0 :
+                        self.stop_profit = max(bb_upper, stop_profit_atr)
+                        self.stop_loss = max(bb_middle, stop_loss_atr)
+                        
+                        if current_price > self.stop_profit: #停利
+                            self.sell(row_index = i, price = self.stop_profit)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        
+                        elif current_price < self.stop_loss : #停損
+                            self.sell(row_index = i, price = self.stop_loss)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        else :
+                            self.stop_loss = max(self.stop_loss, current_price - 1.5 * atr)
+                            
+                    
+                    elif self.position < 0 :
+                        self.stop_profit = min(bb_lower, stop_profit_atr)
+                        self.stop_loss = min(bb_middle, stop_loss_atr)
+                        
+                        if current_price < self.stop_profit : #停利
+                            self.cover(row_index = i, price = self.stop_profit) 
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        
+                        elif current_price > self.stop_loss: #停損
+                            self.cover(row_index = i, price = self.stop_loss)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        else :
+                            self.stop_loss = min(self.stop_loss, current_price + 1.5 * atr)
+                    
+                    self.data.loc[i , 'position'] = self.position
+                    self.data.loc[i , 'equity'] = self.get_total_equity(price = current_price)
+                
+                self.close_position()
+                self.max_drawdown = self.calculate_max_drawdown()
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+
+#impluse macd
+def run(self):
+                '''
+                macd設止盈
+                '''
+               
+                for i in tqdm(range(1, len(self.data))) :
+                    
+                    current_price = self.data.loc[i, 'Close']     
+                    atr = self.data.loc[i, 'atr']
+                    
+                    if self.position == 0 :
+                        if self.data.loc[i, 'signal'] == 1 :
+                            self.long(row_index = i, price = current_price)
+                            self.stop_profit_atr = current_price + 4 * atr
+                            self.stop_loss = current_price - 1 * atr
+                        
+                        elif self.data.loc[i, 'signal'] == -1 :
+                            self.short(row_index = i, price = current_price)
+                            self.stop_profit_atr = current_price - 4 * atr
+                            self.stop_loss = current_price + 1 * atr
+                    
+                    elif self.position > 0 :
+                        
+                        if current_price > self.stop_profit_atr: #停利
+                            self.sell(row_index = i, price = self.stop_profit_atr)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        
+                        elif current_price < self.stop_loss : #停損
+                            self.sell(row_index = i, price = self.stop_loss)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        
+                        else :
+                            self.stop_loss = max(self.stop_loss, current_price - 1 * atr)
+                            
+                    
+                    elif self.position < 0 :
+        
+                        if current_price < self.stop_profit_atr : #停利
+                            self.cover(row_index = i, price = self.stop_profit_atr) 
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        
+                        elif current_price > self.stop_loss: #停損
+                            self.cover(row_index = i, price = self.stop_loss)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                            
+                        else :
+                            self.stop_loss = min(self.stop_loss, current_price + 1 * atr)
+                    
+                    self.data.loc[i , 'position'] = self.position
+                    self.data.loc[i , 'equity'] = self.get_total_equity(price = current_price)
+                
+                self.close_position()
+                self.max_drawdown = self.calculate_max_drawdown()
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+        
+        def run(self):
+                '''
+                macd不設止盈
+                '''
+               
+                for i in tqdm(range(1, len(self.data))) :
+                    
+                    current_price = self.data.loc[i, 'Close']     
+                    atr = self.data.loc[i, 'atr']
+                    
+                    if self.position == 0 :
+                        if self.data.loc[i, 'signal'] == 1 :
+                            self.long(row_index = i, price = current_price)
+                            # self.stop_profit_atr = current_price + 4 * atr
+                            self.stop_loss = current_price - 1 * atr
+                        
+                        elif self.data.loc[i, 'signal'] == -1 :
+                            self.short(row_index = i, price = current_price)
+                            # self.stop_profit_atr = current_price - 4 * atr
+                            self.stop_loss = current_price + 1 * atr
+                    
+                    elif self.position > 0 :
+                        
+                        # if current_price > self.stop_profit_atr: #停利
+                        #     self.sell(row_index = i, price = self.stop_profit_atr)
+                        #     self.stop_profit = None
+                        #     self.stop_loss = None
+                        
+                        if current_price < self.stop_loss : #停損
+                            self.sell(row_index = i, price = self.stop_loss)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                        
+                        else :
+                            self.stop_loss = max(self.stop_loss, current_price - 1 * atr)
+                            
+                    
+                    elif self.position < 0 :
+        
+                        # if current_price < self.stop_profit_atr : #停利
+                        #     self.cover(row_index = i, price = self.stop_profit_atr) 
+                        #     self.stop_profit = None
+                        #     self.stop_loss = None
+                        
+                        if current_price > self.stop_loss: #停損
+                            self.cover(row_index = i, price = self.stop_loss)
+                            self.stop_profit = None
+                            self.stop_loss = None
+                            
+                        else :
+                            self.stop_loss = min(self.stop_loss, current_price + 1 * atr)
+                    
+                    self.data.loc[i , 'position'] = self.position
+                    self.data.loc[i , 'equity'] = self.get_total_equity(price = current_price)
+                
+                self.close_position()
+                self.max_drawdown = self.calculate_max_drawdown()
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+
+
+#超級趨勢策略(很爛)
+        def run(self):
+                '''
+                超級趨勢
+                '''
+               
+                for i in tqdm(range(1, len(self.data))) :
+                    current_price = self.data.loc[i, 'Close']
+                    atr = self.data.loc[i, 'atr_9']
+                    if self.position == 0 :
+                        if self.data.loc[i, 'signal'] == 1 :
+                            self.long(row_index = i, price = current_price)
+                            self.stop_loss = self.data.loc[i, 'stop_loss']
+                        
+                        
+                        elif self.data.loc[i, 'signal'] == -1 :
+                            self.short(row_index = i, price = current_price)
+                            self.stop_loss = self.data.loc[i, 'stop_loss']
+                         
+                            
+                    
+                    elif self.position > 0 :
+                        if self.data.loc[i, 'signal'] == -1 :
+                            self.sell(row_index = i,price = current_price)
+                            self.stop_loss = None
+                        elif current_price < self.stop_loss :
+                            self.sell(row_index = i,price = current_price)
+                            self.stop_loss = None
+                    
+                    elif self.position < 0 :
+                        if self.data.loc[i, 'signal'] == 1 :
+                            self.cover(row_index = i, price = current_price)
+                            self.stop_loss = None
+                        elif current_price > self.stop_loss :
+                            self.cover(row_index = i, price = current_price)
+                            self.stop_loss = None
+                    
+                    self.data.loc[i, 'position'] = self.position
+                    self.data.loc[i, 'equity'] = self.get_total_equity(price = current_price)
+                
+                self.close_position()
+                self.max_drawdown = self.calculate_max_drawdown() 
+                
+                return self.data[['Datetime','Close' , 'signal' , 'equity' , 'position' , 'transaction']]
+                    
